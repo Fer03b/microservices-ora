@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-service
+  labels:
+    app: data-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-service
+  template:
+    metadata:
+      labels:
+        app: data-service
+    spec:
+      serviceAccountName: data-service-sa
+      containers:
+        - name: data-service
+          # ⚠️ Remplace TON_USER_DOCKERHUB par ton pseudo Docker Hub
+          image: TON_USER_DOCKERHUB/data-service:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 50052
+          env:
+            - name: GRPC_PORT
+              value: "50052"
+            - name: PGHOST
+              value: "postgres"
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: "boutiquedb"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests: { cpu: "50m", memory: "96Mi" }
+            limits:   { cpu: "300m", memory: "192Mi" }

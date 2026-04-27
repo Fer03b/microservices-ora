@@ -1,0 +1,31 @@
+# NetworkPolicy : pare-feu au niveau RÉSEAU (L3/L4), complémentaire d'Istio.
+# Istio travaille au niveau 7 (HTTP/gRPC), NetworkPolicy au niveau TCP/UDP.
+#
+# Règle : SEUL data-service peut envoyer du trafic à Postgres sur le port 5432.
+# Même si un attaquant compromet un autre pod, il ne peut pas se connecter
+# directement à la BDD en bypassant data-service.
+#
+# ⚠️ NetworkPolicy nécessite un CNI qui les supporte. Minikube avec le driver
+# Docker par défaut NE les applique PAS. Pour qu'elles soient effectives :
+#   minikube start --cni=calico
+# Sans ça, le manifest est quand même valide (pas d'erreur) mais sans effet.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-access
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: data-service
+      ports:
+        - protocol: TCP
+          port: 5432

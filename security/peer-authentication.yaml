@@ -1,0 +1,18 @@
+# PeerAuthentication : impose le chiffrement mTLS STRICT sur tous les échanges
+# entre pods du namespace default.
+#
+# Mode STRICT : un pod sans sidecar Istio (donc sans identité mTLS valide) ne peut
+# PAS communiquer avec les services du cluster. Tout le trafic interne est chiffré.
+#
+# ⚠️ IMPORTANT : tous les pods doivent avoir le sidecar injecté (c'est déjà notre cas
+# grâce au label istio-injection=enabled sur le namespace). Sinon ça casse tout.
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default-mtls
+  namespace: default
+spec:
+  # Pas de selector → s'applique à TOUS les pods du namespace
+  mtls:
+    mode: STRICT

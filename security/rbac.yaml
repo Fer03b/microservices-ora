@@ -1,0 +1,83 @@
+# RBAC Kubernetes : le principe est "moindre privilège".
+# Chaque ServiceAccount obtient UNIQUEMENT les permissions nécessaires à son travail.
+#
+# Différence avec les AuthorizationPolicies Istio :
+# - Istio AuthorizationPolicy : règles de trafic APPLICATIF (qui peut envoyer du gRPC/REST à qui)
+# - Kubernetes RBAC           : règles API CONTROL-PLANE (qui peut faire kubectl get/create/delete)
+#
+# Nos microservices sont des applications, ils n'ont PAS besoin d'appeler l'API k8s.
+# On leur donne donc un Role minimal : lire les ConfigMaps du namespace, c'est tout.
+# C'est une défense en profondeur : si un attaquant prenait le contrôle d'un pod,
+# il ne pourrait pas lister les secrets ou créer des pods malveillants.
+
+# ─────────────────────────────────────────────────────────────
+# Rôle minimal : peut lire les ConfigMaps du namespace
+# ─────────────────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configmap-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+---
+# On lie ce rôle aux 5 ServiceAccounts de nos microservices
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: microservices-configmap-reader
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: product-service-sa
+    namespace: default
+  - kind: ServiceAccount
+    name: auth-service-sa
+    namespace: default
+  - kind: ServiceAccount
+    name: order-service-sa
+    namespace: default
+  - kind: ServiceAccount
+    name: data-service-sa
+    namespace: default
+  - kind: ServiceAccount
+    name: frontend-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: configmap-reader
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ─────────────────────────────────────────────────────────────
+# Rôle spécifique pour data-service : il peut aussi lire les Secrets
+# (pour récupérer les credentials Postgres).
+# ─────────────────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: postgres-secret-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["postgres-credentials"]  # ⚠️ uniquement CE secret-là
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: data-service-secret-reader
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: data-service-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: postgres-secret-reader
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,67 @@
+# VirtualService : définit les règles de routage sur la Gateway.
+# Un seul point d'entrée (le hostname), plusieurs destinations selon le préfixe :
+#
+#   /api/products/*  →  product-service:3000   (on retire le préfixe /api)
+#   /api/auth/*      →  auth-service:3001
+#   /api/orders/*    →  order-service:3002
+#   /*               →  frontend:80            (React SPA)
+#
+# ⚠️ L'ordre des règles compte : les plus spécifiques EN PREMIER.
+# Istio évalue les règles dans l'ordre et prend la première qui matche.
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boutique-routes
+  namespace: default
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - boutique-gateway
+  http:
+    # -------- /api/products/* → product-service --------
+    - match:
+        - uri:
+            prefix: /api/products
+      rewrite:
+        uri: /products        # retire le préfixe /api avant d'appeler le service
+      route:
+        - destination:
+            host: product-service
+            port:
+              number: 3000
+
+    # -------- /api/auth/* → auth-service --------
+    - match:
+        - uri:
+            prefix: /api/auth
+      rewrite:
+        uri: /auth
+      route:
+        - destination:
+            host: auth-service
+            port:
+              number: 3001
+
+    # -------- /api/orders/* → order-service --------
+    - match:
+        - uri:
+            prefix: /api/orders
+      rewrite:
+        uri: /orders
+      route:
+        - destination:
+            host: order-service
+            port:
+              number: 3002
+
+    # -------- /* → frontend (catch-all, doit rester EN DERNIER) --------
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: frontend
+            port:
+              number: 80

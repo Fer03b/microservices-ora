@@ -1,0 +1,150 @@
+# RBAC Kubernetes — ServiceAccount dédié par microservice.
+#
+# Par défaut, chaque pod utilise le ServiceAccount "default" du namespace,
+# qui n'a généralement pas de droits particuliers mais est partagé.
+# Bonne pratique : un SA par workload, avec le principe de moindre privilège.
+#
+# Ici chaque service reçoit son SA (nécessaire aussi pour les
+# AuthorizationPolicies Istio qui raisonnent par principal).
+
+# ═══════════════════════════════════════════════════════════════
+# ServiceAccounts : identité de chaque microservice
+# ═══════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: product-service-sa
+  namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: auth-service-sa
+  namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: order-service-sa
+  namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: data-service-sa
+  namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-sa
+  namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-sa
+  namespace: default
+---
+# ═══════════════════════════════════════════════════════════════
+# Role : droit de LIRE les ConfigMaps du namespace
+# (exemple de permission minimale utile pour data-service si
+#  on veut externaliser la config plus tard)
+# ═══════════════════════════════════════════════════════════════
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configmap-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+# data-service peut lire les ConfigMaps (pour charger sa config à chaud)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: data-service-can-read-configmaps
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: data-service-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: configmap-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# ═══════════════════════════════════════════════════════════════
+# Role : LIRE les Secrets (TRÈS restreint)
+# Seul data-service en a besoin (credentials Postgres).
+# ═══════════════════════════════════════════════════════════════
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: db-secret-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    # resourceNames limite au SEUL secret postgres-credentials
+    # → data-service ne peut pas lire le secret JWT par exemple
+    resourceNames: ["postgres-credentials"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: data-service-can-read-db-secret
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: data-service-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: db-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# ═══════════════════════════════════════════════════════════════
+# Role : lire le secret JWT (pour auth et order uniquement)
+# ═══════════════════════════════════════════════════════════════
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jwt-secret-reader
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["jwt-secret"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: auth-service-can-read-jwt-secret
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: auth-service-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: jwt-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: order-service-can-read-jwt-secret
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: order-service-sa
+    namespace: default
+roleRef:
+  kind: Role
+  name: jwt-secret-reader
+  apiGroup: rbac.authorization.k8s.io

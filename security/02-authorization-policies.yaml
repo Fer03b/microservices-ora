@@ -1,0 +1,148 @@
+# AuthorizationPolicies Istio : définissent QUI a le droit d'appeler QUI.
+# Appliquées par le sidecar Envoy avant d'atteindre le pod (defense in depth).
+#
+# Principe : deny-by-default + autoriser uniquement les flux légitimes.
+
+# ═══════════════════════════════════════════════════════════════
+# 1. deny-all sur tout le namespace (règle la plus restrictive)
+#    On ouvrira ensuite uniquement les flux nécessaires.
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: default
+spec:
+  # Pas de selector → s'applique à tous les pods du namespace
+  # action: DENY par défaut quand il n'y a pas de "rules" explicites
+  {}
+---
+# ═══════════════════════════════════════════════════════════════
+# 2. Frontend : accessible depuis la gateway Istio uniquement
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            # Le ServiceAccount de l'ingressgateway Istio
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+---
+# ═══════════════════════════════════════════════════════════════
+# 3. product-service : appelé par la gateway (REST) + par order-service (gRPC)
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-product
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: product-service
+  action: ALLOW
+  rules:
+    # REST depuis la gateway
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+      to:
+        - operation:
+            ports: ["3000"]
+    # gRPC depuis order-service
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/default/sa/order-service-sa"
+      to:
+        - operation:
+            ports: ["50051"]
+---
+# ═══════════════════════════════════════════════════════════════
+# 4. auth-service : appelé uniquement par la gateway
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-auth
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: auth-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+---
+# ═══════════════════════════════════════════════════════════════
+# 5. order-service : appelé uniquement par la gateway
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-order
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: order-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+---
+# ═══════════════════════════════════════════════════════════════
+# 6. data-service : appelé UNIQUEMENT par auth-service et order-service
+#    (le plus sensible : il a accès à Postgres)
+#    JAMAIS accessible depuis la gateway !
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-data
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: data-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/default/sa/auth-service-sa"
+              - "cluster.local/ns/default/sa/order-service-sa"
+---
+# ═══════════════════════════════════════════════════════════════
+# 7. postgres : uniquement data-service peut s'y connecter
+# ═══════════════════════════════════════════════════════════════
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-postgres
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/default/sa/data-service-sa"

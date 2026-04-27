@@ -1,0 +1,18 @@
+# mTLS STRICT sur l'ensemble du namespace default.
+#
+# Tous les échanges entre pods (avec sidecar Envoy) sont désormais
+# CHIFFRÉS automatiquement par Istio avec des certificats X.509 courts
+# (rotation automatique). Un attaquant qui sniffe le réseau du cluster
+# ne voit que du chiffré.
+#
+# Le trafic entrant via la gateway Istio reste accepté (HTTP) car la
+# gateway sait "parler mTLS" aux services derrière elle.
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: default
+spec:
+  mtls:
+    mode: STRICT

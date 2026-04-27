@@ -1,0 +1,173 @@
+# NetworkPolicies : pare-feu réseau au niveau Kubernetes (L3/L4).
+#
+# C'est une couche SUPPLÉMENTAIRE aux AuthorizationPolicies Istio (L7).
+# Défense en profondeur : même si un attaquant contourne Istio, le réseau
+# lui-même bloque les connexions non autorisées.
+#
+# ⚠️ Sur minikube, il faut un CNI qui supporte les NetworkPolicy (Cilium, Calico).
+# Le CNI par défaut de minikube (kindnet) NE LES APPLIQUE PAS.
+# Pour activer sur minikube : minikube start --cni=calico
+#
+# Si ton cluster ne supporte pas les NetworkPolicies, ces règles
+# seront acceptées par l'API mais n'auront pas d'effet. Ce n'est PAS
+# un problème pour ton projet : tu montres que tu as écrit les règles,
+# la mise en œuvre dépend du cluster. Documente-le dans ton rapport.
+
+# ═══════════════════════════════════════════════════════════════
+# 1. default deny : par défaut aucun pod ne reçoit de trafic
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: default
+spec:
+  podSelector: {}   # tous les pods
+  policyTypes:
+    - Ingress
+---
+# ═══════════════════════════════════════════════════════════════
+# 2. Postgres : n'accepte que le trafic venant de data-service
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-allow-data-service
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: data-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# ═══════════════════════════════════════════════════════════════
+# 3. data-service : n'accepte que auth-service et order-service
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-service-allow-internal
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: data-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 50052
+---
+# ═══════════════════════════════════════════════════════════════
+# 4. product-service : accepte la gateway (REST 3000)
+#    et order-service (gRPC 50051)
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: product-service-allow
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: product-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 3000
+    - from:
+        - podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 50051
+---
+# ═══════════════════════════════════════════════════════════════
+# 5. auth-service et order-service : accessibles depuis la gateway
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-allow-gateway
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 3001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: order-service-allow-gateway
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: order-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 3002
+---
+# ═══════════════════════════════════════════════════════════════
+# 6. frontend : accessible depuis la gateway
+# ═══════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-allow-gateway
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 80

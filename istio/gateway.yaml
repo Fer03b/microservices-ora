@@ -1,0 +1,20 @@
+# Gateway Istio : écoute sur le port 80 de l'istio-ingressgateway
+# et accepte toutes les hostnames (*).
+# C'est le POINT D'ENTRÉE UNIQUE de la boutique : tout le trafic externe
+# passe par ici avant d'être routé par le VirtualService vers le bon service.
+
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: boutique-gateway
+  namespace: default
+spec:
+  selector:
+    istio: ingressgateway   # cible l'ingressgateway installé par istioctl
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"

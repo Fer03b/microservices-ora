@@ -1,0 +1,117 @@
+# AuthorizationPolicies Istio : règles "zero trust" appliquées par le sidecar Envoy.
+# Chaque policy cible un service (via selector) et liste les identités autorisées
+# à l'appeler (via principals = ServiceAccount).
+#
+# L'identité est vérifiée cryptographiquement via le certificat mTLS, impossible
+# à usurper : même quelqu'un dans le réseau du cluster ne peut pas se faire passer
+# pour auth-service sans avoir la clé privée de son sidecar.
+
+# ─────────────────────────────────────────────────────────────
+# product-service : ouvert (catalogue public pour les visiteurs)
+# Accessible par l'ingressgateway (REST) et par order-service (gRPC)
+# ─────────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: product-service-policy
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: product-service
+  action: ALLOW
+  rules:
+    # REST public (via gateway Istio)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+      to:
+        - operation:
+            ports: ["3000"]
+    # gRPC interne : uniquement order-service
+    - from:
+        - source:
+            principals: ["cluster.local/ns/default/sa/order-service-sa"]
+      to:
+        - operation:
+            ports: ["50051"]
+
+---
+# ─────────────────────────────────────────────────────────────
+# auth-service : accessible UNIQUEMENT par l'ingressgateway (REST public)
+# ─────────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: auth-service-policy
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: auth-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+
+---
+# ─────────────────────────────────────────────────────────────
+# order-service : accessible UNIQUEMENT par l'ingressgateway
+# ─────────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: order-service-policy
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: order-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+
+---
+# ─────────────────────────────────────────────────────────────
+# data-service : INTERNE UNIQUEMENT
+# Accessible SEULEMENT par auth-service et order-service.
+# Impossible de l'appeler depuis l'extérieur du cluster ou depuis frontend.
+# ─────────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: data-service-policy
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: data-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/default/sa/auth-service-sa"
+              - "cluster.local/ns/default/sa/order-service-sa"
+
+---
+# ─────────────────────────────────────────────────────────────
+# frontend : accessible par l'ingressgateway (sert les fichiers statiques)
+# ─────────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: frontend-policy
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
